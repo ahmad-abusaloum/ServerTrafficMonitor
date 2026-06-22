@@ -1,0 +1,258 @@
+<Window x:Class="ServerTrafficMonitor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="clr-namespace:ServerTrafficMonitor.Models"
+        Title="Server Traffic Monitor" Height="760" Width="1280"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bg}">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="B2V"/>
+    </Window.Resources>
+
+    <DockPanel>
+
+        <!-- ================= Top toolbar ================= -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource BorderClr}"
+                BorderThickness="0,0,0,1" Padding="12,8">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="🛰" FontSize="18" Margin="0,0,8,0"/>
+                    <TextBlock Text="Server Traffic Monitor" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                    <Button Content="{Binding PauseLabel}" Command="{Binding TogglePauseCommand}" MinWidth="92"/>
+                    <Button Content="🗑  Clear" Command="{Binding ClearCommand}"/>
+                    <Button Content="⬇  Export CSV" Command="{Binding ExportCommand}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Visibility="{Binding ShowElevationWarning, Converter={StaticResource B2V}}">
+                    <TextBlock Text="⚠" Foreground="{StaticResource Danger}" FontSize="15" Margin="0,0,6,0"/>
+                    <TextBlock Text="Not running as Administrator — some PIDs and HTTP capture will be limited."
+                               Foreground="{StaticResource Danger}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= Status bar ================= -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource BorderClr}"
+                BorderThickness="0,1,0,0" Padding="12,5">
+            <Grid>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource Accent}"/>
+                    <TextBlock Text="   |   " Foreground="{StaticResource SubText}"/>
+                    <TextBlock Text="{Binding Stats}" Foreground="{StaticResource SubText}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding HttpStatus}" Foreground="{StaticResource SubText}"/>
+                    <TextBlock Text="   •   " Foreground="{StaticResource BorderClr}"/>
+                    <TextBlock Text="{Binding OutboundHttpStatus}" Foreground="{StaticResource SubText}"/>
+                    <TextBlock Text="    Last update: " Foreground="{StaticResource SubText}"/>
+                    <TextBlock Text="{Binding LastUpdateText}" Foreground="{StaticResource Text}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= Tabs ================= -->
+        <TabControl Margin="8" BorderThickness="1">
+
+            <!-- Connections tab -->
+            <TabItem Header="🔌  Connections (All Traffic)">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="{StaticResource Bg2}" BorderBrush="{StaticResource BorderClr}"
+                            BorderThickness="0,0,0,1" Padding="10,8">
+                        <WrapPanel Orientation="Horizontal">
+                            <TextBlock Text="Search (host / IP / process):" Margin="0,0,6,0" Foreground="{StaticResource SubText}"/>
+                            <TextBox Width="230" Margin="0,0,16,0"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <TextBlock Text="Port:" Margin="0,0,6,0" Foreground="{StaticResource SubText}"/>
+                            <TextBox Width="80" Margin="0,0,16,0"
+                                     Text="{Binding PortFilter, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <TextBlock Text="Direction:" Margin="0,0,6,0" Foreground="{StaticResource SubText}"/>
+                            <ComboBox Width="110" Margin="0,0,16,0"
+                                      ItemsSource="{Binding DirectionOptions}" SelectedItem="{Binding SelectedDirection}"/>
+
+                            <TextBlock Text="Protocol:" Margin="0,0,6,0" Foreground="{StaticResource SubText}"/>
+                            <ComboBox Width="80" Margin="0,0,16,0"
+                                      ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding SelectedProtocol}"/>
+
+                            <CheckBox Content="Active only" IsChecked="{Binding ActiveOnly}"/>
+                        </WrapPanel>
+                    </Border>
+
+                    <DataGrid ItemsSource="{Binding ConnectionsView}">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsActive}" Value="False">
+                                        <Setter Property="Opacity" Value="0.55"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time" Width="72">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="FirstSeen" StringFormat="HH:mm:ss"/>
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+
+                            <DataGridTemplateColumn Header="Direction" Width="98">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DirectionText}" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:TrafficDirection.Inbound}">
+                                                            <Setter Property="Foreground" Value="{StaticResource Inbound}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:TrafficDirection.Outbound}">
+                                                            <Setter Property="Foreground" Value="{StaticResource Outbound}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:TrafficDirection.Listening}">
+                                                            <Setter Property="Foreground" Value="{StaticResource Listening}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:TrafficDirection.Local}">
+                                                            <Setter Property="Foreground" Value="{StaticResource SubText}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Proto" Binding="{Binding Protocol}" Width="58"/>
+                            <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="130"/>
+                            <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="58"/>
+                            <DataGridTextColumn Header="Local" Binding="{Binding LocalEndpoint}" Width="160"/>
+                            <DataGridTextColumn Header="Remote IP" Binding="{Binding RemoteAddress}" Width="135"/>
+                            <DataGridTextColumn Header="Remote Host (domain)" Binding="{Binding RemoteHost}" Width="*"/>
+                            <DataGridTextColumn Header="Port" Binding="{Binding RemotePort}" Width="62"/>
+                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="92"/>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}" Width="74"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- Inbound HTTP tab -->
+            <TabItem Header="🌐  Inbound HTTP (IIS / HTTP.sys)">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="{StaticResource Bg2}" BorderBrush="{StaticResource BorderClr}"
+                            BorderThickness="0,0,0,1" Padding="10,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter (URL / method / status / client):" Margin="0,0,6,0" Foreground="{StaticResource SubText}"/>
+                            <TextBox Width="320" Margin="0,0,16,0"
+                                     Text="{Binding HttpSearch, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Content="🗑  Clear" Command="{Binding ClearHttpCommand}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <DataGrid ItemsSource="{Binding HttpView}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="100"/>
+
+                            <DataGridTemplateColumn Header="Status" Width="70">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="Success">
+                                                            <Setter Property="Foreground" Value="{StaticResource Inbound}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="Redirect">
+                                                            <Setter Property="Foreground" Value="{StaticResource Listening}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="ClientError">
+                                                            <Setter Property="Foreground" Value="{StaticResource Outbound}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="ServerError">
+                                                            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="Pending">
+                                                            <Setter Property="Foreground" Value="{StaticResource SubText}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="76"/>
+                            <DataGridTextColumn Header="URL" Binding="{Binding Url}" Width="*"/>
+                            <DataGridTextColumn Header="Client" Binding="{Binding ClientEndpoint}" Width="170"/>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}" Width="90"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- Outbound HTTP tab -->
+            <TabItem Header="📡  Outbound HTTP (App → APIs)">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="{StaticResource Bg2}" BorderBrush="{StaticResource BorderClr}"
+                            BorderThickness="0,0,0,1" Padding="10,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter (URL / host / status / process):" Margin="0,0,6,0" Foreground="{StaticResource SubText}"/>
+                            <TextBox Width="320" Margin="0,0,16,0"
+                                     Text="{Binding OutboundHttpSearch, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Content="🗑  Clear" Command="{Binding ClearOutboundHttpCommand}"/>
+                            <TextBlock Text="  Captures HttpClient calls from .NET apps (e.g. w3wp) — full URL + status, no proxy."
+                                       Foreground="{StaticResource SubText}" FontStyle="Italic" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <DataGrid ItemsSource="{Binding OutboundHttpView}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="100"/>
+
+                            <DataGridTemplateColumn Header="Status" Width="70">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="Success">
+                                                            <Setter Property="Foreground" Value="{StaticResource Inbound}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="Redirect">
+                                                            <Setter Property="Foreground" Value="{StaticResource Listening}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="ClientError">
+                                                            <Setter Property="Foreground" Value="{StaticResource Outbound}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="ServerError">
+                                                            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusCategory}" Value="Pending">
+                                                            <Setter Property="Foreground" Value="{StaticResource SubText}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="URL" Binding="{Binding Url}" Width="*"/>
+                            <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="190"/>
+                            <DataGridTextColumn Header="Process (caller)" Binding="{Binding ProcessDisplay}" Width="170"/>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}" Width="90"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</Window>

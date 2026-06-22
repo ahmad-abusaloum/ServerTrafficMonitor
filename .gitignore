@@ -1,0 +1,45 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Pp]ublish/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Rider
+*.DotSettings.user
+
+# Build / restore artifacts
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.binlog
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+
+# Misc
+*.log
+*.tmp
