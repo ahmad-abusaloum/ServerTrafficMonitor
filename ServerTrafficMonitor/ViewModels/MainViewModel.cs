@@ -24,6 +24,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private readonly OutboundHttpEtwMonitor _outHttpMonitor;
     private readonly ProcessResolver _proc = new();
     private readonly DnsResolver _dns = new();
+    private readonly GeoIpResolver _geo = new();
+
+    // Our own process — excluded so the tool's own DNS / Geo lookups don't appear as traffic.
+    private static readonly int OwnPid = Environment.ProcessId;
 
     private readonly Dictionary<string, ConnectionRecord> _activeByKey = new();
     private readonly Dictionary<Guid, HttpRecord> _outPending = new();
@@ -107,6 +111,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         foreach (var c in snap)
         {
+            if (c.ProcessId == OwnPid) continue; // hide the monitor's own sockets
+
             string key = MakeKey(c);
             if (!seen.Add(key)) continue; // ignore duplicate tuples within one snapshot
 
@@ -135,6 +141,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
             var host = _dns.TryGetOrResolve(c.RemoteAddress, h => Post(() => rec.RemoteHost = h));
             if (host != null) rec.RemoteHost = host;
+
+            var geo = _geo.TryGetOrResolve(rec.RemoteAddress,
+                (code, country) => Post(() => { rec.CountryCode = code; rec.Country = country; }));
+            if (geo is { } g) { rec.CountryCode = g.code; rec.Country = g.country; }
 
             _activeByKey[key] = rec;
             Connections.Insert(0, rec);
@@ -182,6 +192,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
     private void OnOutboundStarted(Guid id, HttpRecord rec)
     {
+        if (rec.ProcessId == OwnPid) return; // hide the monitor's own outbound calls
+
         OutboundHttp.Insert(0, rec);
         if (id != Guid.Empty) _outPending[id] = rec;
 
@@ -215,6 +227,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void OnOutboundConnect(OutboundConnection o)
     {
+        if (o.ProcessId == OwnPid) return; // hide the monitor's own connections
+
         string key = MakeKey(o.Protocol, o.LocalAddress, o.LocalPort, o.RemoteAddress, o.RemotePort);
         if (_activeByKey.ContainsKey(key)) return; // already tracked via polling
 
@@ -239,6 +253,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             var host = _dns.TryGetOrResolve(ip, h => Post(() => rec.RemoteHost = h));
             if (host != null) rec.RemoteHost = host;
         }
+
+        var geo = _geo.TryGetOrResolve(rec.RemoteAddress,
+            (code, country) => Post(() => { rec.CountryCode = code; rec.Country = country; }));
+        if (geo is { } g) { rec.CountryCode = g.code; rec.Country = g.country; }
 
         _activeByKey[key] = rec;
         Connections.Insert(0, rec);
@@ -271,7 +289,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         if (dlg.ShowDialog() != true) return;
 
         var sb = new StringBuilder();
-        sb.AppendLine("Time,Direction,Protocol,Process,PID,Local,RemoteIP,RemoteHost,RemotePort,State,Duration");
+        sb.AppendLine("Time,Direction,Protocol,Process,PID,Local,RemoteIP,RemoteHost,Country,RemotePort,State,Duration");
         foreach (ConnectionRecord r in ConnectionsView)
         {
             sb.AppendLine(string.Join(",", new[]
@@ -284,6 +302,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 Csv(r.LocalEndpoint),
                 Csv(r.RemoteAddress),
                 Csv(r.RemoteHost),
+                Csv(r.CountryDisplay),
                 Csv(r.RemotePort.ToString()),
                 Csv(r.State),
                 Csv(r.DurationText),
@@ -329,7 +348,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         if (string.IsNullOrWhiteSpace(_httpSearch)) return true;
         var s = _httpSearch.Trim();
         return IndexOf(r.Url, s) >= 0 || IndexOf(r.Method, s) >= 0 ||
-               IndexOf(r.ClientAddress, s) >= 0 || r.StatusCode.ToString().Contains(s);
+               r.StatusCode.ToString().Contains(s);
     }
 
     private bool OutboundHttpFilter(object o)
@@ -387,6 +406,16 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
     private string _stats = "";
     public string Stats { get => _stats; set => SetField(ref _stats, value); }
+
+    // Selected rows -> drive the details panels in each tab.
+    private ConnectionRecord? _selectedConnection;
+    public ConnectionRecord? SelectedConnection { get => _selectedConnection; set => SetField(ref _selectedConnection, value); }
+
+    private HttpRecord? _selectedHttp;
+    public HttpRecord? SelectedHttp { get => _selectedHttp; set => SetField(ref _selectedHttp, value); }
+
+    private HttpRecord? _selectedOutbound;
+    public HttpRecord? SelectedOutbound { get => _selectedOutbound; set => SetField(ref _selectedOutbound, value); }
 
     public bool IsElevated { get; }
     public bool ShowElevationWarning => !IsElevated;

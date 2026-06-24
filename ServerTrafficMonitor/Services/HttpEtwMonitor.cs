@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Session;
 using ServerTrafficMonitor.Models;
@@ -10,7 +9,7 @@ namespace ServerTrafficMonitor.Services;
 /// Captures inbound HTTP requests by consuming the kernel-mode HTTP stack's ETW
 /// provider (Microsoft-Windows-HttpService). This is the same path IIS sits on,
 /// so every request that reaches IIS on this server is observed here — URL, verb,
-/// status code, client endpoint and duration — without touching the API's code.
+/// status code and duration — without touching the API's code.
 ///
 /// Requests are correlated to their response via the ETW Activity Id and emitted
 /// once complete. Requires the process to run elevated.
@@ -34,8 +33,6 @@ public sealed class HttpEtwMonitor : IDisposable
         public DateTime Start;
         public string Method = "";
         public string Url = "";
-        public string Client = "";
-        public int ClientPort;
     }
 
     public void Start()
@@ -48,6 +45,7 @@ public sealed class HttpEtwMonitor : IDisposable
                 return;
             }
 
+            StopStaleSession(SessionName);
             _session = new TraceEventSession(SessionName) { StopOnDispose = true };
             _session.EnableProvider("Microsoft-Windows-HttpService");
             _session.Source.Dynamic.All += OnEvent;
@@ -76,19 +74,18 @@ public sealed class HttpEtwMonitor : IDisposable
             string name = data.EventName ?? "";
             Guid id = data.ActivityID;
 
-            // --- Request phase: client endpoint arrives with RecvReq, URL/verb with Parse ---
-            if (name.Contains("RecvReq", StringComparison.OrdinalIgnoreCase))
-            {
-                var p = _pending.GetOrAdd(id, _ => new Pending { Start = data.TimeStamp });
-                TryFillClient(data, p);
-            }
-            else if (name.Contains("Parse", StringComparison.OrdinalIgnoreCase))
+            // Request phase: the URL and verb arrive with the Parse event.
+            if (name.Contains("Parse", StringComparison.OrdinalIgnoreCase))
             {
                 var p = _pending.GetOrAdd(id, _ => new Pending { Start = data.TimeStamp });
                 p.Url = Str(data, "Url") ?? p.Url;
                 p.Method = VerbToString(data) ?? p.Method;
             }
-            // --- Response phase: status code is available -> emit the completed record ---
+            else if (name.Contains("RecvReq", StringComparison.OrdinalIgnoreCase))
+            {
+                _pending.GetOrAdd(id, _ => new Pending { Start = data.TimeStamp });
+            }
+            // Response phase: the status code is available -> emit the completed record.
             else if (name.Contains("FastResp", StringComparison.OrdinalIgnoreCase)
                   || name.Contains("FastSend", StringComparison.OrdinalIgnoreCase)
                   || name.Contains("SendComplete", StringComparison.OrdinalIgnoreCase)
@@ -96,10 +93,7 @@ public sealed class HttpEtwMonitor : IDisposable
             {
                 int status = Int(data, "HttpStatusCode", "StatusCode");
                 if (id != Guid.Empty && _pending.TryRemove(id, out var p))
-                {
-                    double ms = (data.TimeStamp - p.Start).TotalMilliseconds;
-                    Emit(p, status, ms);
-                }
+                    Emit(p, status, (data.TimeStamp - p.Start).TotalMilliseconds);
             }
         }
         catch
@@ -119,8 +113,6 @@ public sealed class HttpEtwMonitor : IDisposable
             Method = p.Method,
             Url = p.Url,
             StatusCode = status,
-            ClientAddress = p.Client,
-            ClientPort = p.ClientPort,
             DurationMs = ms > 0 ? ms : 0
         });
     }
@@ -135,39 +127,22 @@ public sealed class HttpEtwMonitor : IDisposable
             {
                 var cutoff = DateTime.Now.AddSeconds(-30);
                 foreach (var kvp in _pending)
-                {
                     if (kvp.Value.Start < cutoff && _pending.TryRemove(kvp.Key, out var p))
                         Emit(p, 0, 0);
-                }
             }
         }
         catch (OperationCanceledException) { }
     }
 
-    private static void TryFillClient(TraceEvent data, Pending p)
+    /// <summary>Stop a same-named ETW session left over from a process that didn't shut down cleanly.</summary>
+    internal static void StopStaleSession(string sessionName)
     {
-        // HTTP.sys renders the client endpoint as a sockaddr blob in "RemoteAddr".
         try
         {
-            if (data.PayloadByName("RemoteAddr") is byte[] sa && sa.Length >= 8)
-            {
-                int family = sa[0] | (sa[1] << 8);
-                int port = (sa[2] << 8) | sa[3]; // big-endian
-                if (family == 2 && sa.Length >= 8) // AF_INET
-                {
-                    p.Client = new IPAddress(new[] { sa[4], sa[5], sa[6], sa[7] }).ToString();
-                    p.ClientPort = port;
-                }
-                else if (family == 23 && sa.Length >= 24) // AF_INET6
-                {
-                    var v6 = new byte[16];
-                    Array.Copy(sa, 8, v6, 0, 16);
-                    p.Client = new IPAddress(v6).ToString();
-                    p.ClientPort = port;
-                }
-            }
+            using var stale = new TraceEventSession(sessionName, TraceEventSessionOptions.Attach);
+            stale.Stop();
         }
-        catch { }
+        catch { /* nothing to clean up */ }
     }
 
     private static string? Str(TraceEvent d, params string[] names)

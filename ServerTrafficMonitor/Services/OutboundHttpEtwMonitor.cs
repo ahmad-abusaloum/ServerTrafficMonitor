@@ -46,6 +46,7 @@ public sealed class OutboundHttpEtwMonitor : IDisposable
                 return;
             }
 
+            HttpEtwMonitor.StopStaleSession(SessionName);
             _session = new TraceEventSession(SessionName) { StopOnDispose = true };
             _session.EnableProvider(Provider, TraceEventLevel.Informational, ulong.MaxValue);
             _session.Source.Dynamic.All += OnEvent;

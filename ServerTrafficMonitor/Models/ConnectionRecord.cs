@@ -42,6 +42,25 @@ public sealed class ConnectionRecord : INotifyPropertyChanged
         set => SetField(ref _remoteHost, value);
     }
 
+    // Geo-IP of the remote endpoint — filled in asynchronously.
+    private string _country = "";
+    public string Country
+    {
+        get => _country;
+        set { if (SetField(ref _country, value)) OnPropertyChanged(nameof(CountryDisplay)); }
+    }
+
+    private string _countryCode = "";
+    public string CountryCode
+    {
+        get => _countryCode;
+        set { if (SetField(ref _countryCode, value)) OnPropertyChanged(nameof(CountryDisplay)); }
+    }
+
+    public string CountryDisplay =>
+        _country.Length == 0 ? "" :
+        _countryCode.Length == 2 ? $"{_country} ({_countryCode})" : _country;
+
     private DateTime _lastSeen = DateTime.Now;
     public DateTime LastSeen
     {

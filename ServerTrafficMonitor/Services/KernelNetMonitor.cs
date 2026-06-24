@@ -42,6 +42,7 @@ public sealed class KernelNetMonitor : IDisposable
                 return;
             }
 
+            HttpEtwMonitor.StopStaleSession(SessionName);
             _session = new TraceEventSession(SessionName) { StopOnDispose = true };
             _session.EnableKernelProvider(KernelTraceEventParser.Keywords.NetworkTCPIP);
 
